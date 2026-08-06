@@ -95,6 +95,42 @@ func TestUpdate_KeyboardNavigation(t *testing.T) {
 	assert.Equal(t, 0, m.cursor, "cursor should clamp at top")
 }
 
+func TestUpdate_KeyboardNavigationVimKeys(t *testing.T) {
+	nodes := makeNodes("b1", "b2", "b3")
+	m := New(nodes, testTrunk, "0.0.1", 0)
+	assert.Equal(t, 0, m.cursor)
+
+	// Down
+	updated, _ := m.Update(keyMsg("j"))
+	m = updated.(Model)
+	assert.Equal(t, 1, m.cursor)
+
+	// Down again
+	updated, _ = m.Update(keyMsg("j"))
+	m = updated.(Model)
+	assert.Equal(t, 2, m.cursor)
+
+	// Down at bottom — should clamp
+	updated, _ = m.Update(keyMsg("j"))
+	m = updated.(Model)
+	assert.Equal(t, 2, m.cursor, "cursor should clamp at bottom")
+
+	// Up
+	updated, _ = m.Update(keyMsg("k"))
+	m = updated.(Model)
+	assert.Equal(t, 1, m.cursor)
+
+	// Up
+	updated, _ = m.Update(keyMsg("k"))
+	m = updated.(Model)
+	assert.Equal(t, 0, m.cursor)
+
+	// Up at top — should clamp
+	updated, _ = m.Update(keyMsg("k"))
+	m = updated.(Model)
+	assert.Equal(t, 0, m.cursor, "cursor should clamp at top")
+}
+
 func TestUpdate_ToggleCommits(t *testing.T) {
 	nodes := makeNodes("b1", "b2")
 	nodes[0].Commits = []git.CommitInfo{{SHA: "abc", Subject: "test"}}
@@ -360,6 +396,23 @@ func TestUpdate_CursorSkipsMergedBranches(t *testing.T) {
 	assert.Equal(t, 0, m.cursor, "up should skip merged b2 and land on b1")
 }
 
+func TestUpdate_VimKeysSkipMergedBranches(t *testing.T) {
+	nodes := makeNodes("b1", "b2", "b3")
+	nodes[1].Ref.PullRequest = &stack.PullRequestRef{Number: 2, Merged: true}
+	m := New(nodes, testTrunk, "0.0.1", 0)
+	assert.Equal(t, 0, m.cursor, "cursor should start on first non-merged branch")
+
+	// j should skip b2 (merged) and land on b3
+	updated, _ := m.Update(keyMsg("j"))
+	m = updated.(Model)
+	assert.Equal(t, 2, m.cursor, "j should skip merged b2 and land on b3")
+
+	// k should skip b2 (merged) and land back on b1
+	updated, _ = m.Update(keyMsg("k"))
+	m = updated.(Model)
+	assert.Equal(t, 0, m.cursor, "k should skip merged b2 and land on b1")
+}
+
 func TestNew_CursorSkipsMergedBranch(t *testing.T) {
 	nodes := makeNodes("b1", "b2", "b3")
 	nodes[0].Ref.PullRequest = &stack.PullRequestRef{Number: 1, Merged: true}
@@ -421,6 +474,18 @@ func TestUpdate_AllMergedCursorStaysHidden(t *testing.T) {
 	assert.Nil(t, cmd, "enter should not quit when all merged")
 }
 
+func TestUpdate_AllMergedVimKeysCursorStaysHidden(t *testing.T) {
+	m := New(makeAllMergedNodes("b1", "b2", "b3"), testTrunk, "0.0.1", 0)
+
+	updated, _ := m.Update(keyMsg("j"))
+	m = updated.(Model)
+	assert.Equal(t, -1, m.cursor, "j should not move the hidden cursor")
+
+	updated, _ = m.Update(keyMsg("k"))
+	m = updated.(Model)
+	assert.Equal(t, -1, m.cursor, "k should not move the hidden cursor")
+}
+
 func TestView_AllMergedRendersWithoutPanic(t *testing.T) {
 	m := New(makeAllMergedNodes("b1", "b2"), testTrunk, "0.0.1", 0)
 	updated, _ := m.Update(tea.WindowSizeMsg{Width: 100, Height: 40})
@@ -452,6 +517,15 @@ func TestBuildHeaderConfig_ShortcutsEnabledWithActiveBranches(t *testing.T) {
 	for _, sc := range cfg.Shortcuts {
 		assert.False(t, sc.Disabled, "%q should be enabled when there are active branches", sc.Desc)
 	}
+}
+
+func TestBuildHeaderConfig_NavigateShortcutShowsVimKeys(t *testing.T) {
+	m := New(makeNodes("b1", "b2"), testTrunk, "0.0.1", 0)
+	cfg := m.buildHeaderConfig()
+
+	require.NotEmpty(t, cfg.Shortcuts)
+	assert.Equal(t, "↑↓/kj", cfg.Shortcuts[0].Key, "navigate shortcut should advertise vim keys")
+	assert.Equal(t, "navigate", cfg.Shortcuts[0].Desc)
 }
 
 func TestBuildHeaderConfig_ShowsStackNumber(t *testing.T) {
